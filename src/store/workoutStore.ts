@@ -2,12 +2,15 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ActiveSession,
   DayOfWeek,
   DayPresets,
   Exercise,
   ExerciseLibraryItem,
+  Log,
   MuscleCategory,
   WorkoutPlan,
+  WorkoutSet,
 } from '../types/workout';
 
 // ---------------------------------------------------------------------------
@@ -86,11 +89,29 @@ const createDefaultPlan = (): WorkoutPlan =>
     return plan;
   }, {} as WorkoutPlan);
 
-let idCounter = 0;
+let exerciseIdCounter = 0;
 const generateExerciseId = (): string => {
-  idCounter += 1;
-  return `exercise-${Date.now()}-${idCounter}`;
+  exerciseIdCounter += 1;
+  return `exercise-${Date.now()}-${exerciseIdCounter}`;
 };
+
+let setIdCounter = 0;
+const generateSetId = (): string => {
+  setIdCounter += 1;
+  return `set-${Date.now()}-${setIdCounter}`;
+};
+
+/** Formats a numeric weight for display, dropping a trailing ".0". */
+export const formatWeight = (weight: number): string => {
+  if (Number.isNaN(weight)) return '';
+  return Number.isInteger(weight) ? String(weight) : weight.toFixed(1).replace(/\.0$/, '');
+};
+
+interface LogSetResult {
+  success: boolean;
+  exerciseCompleted: boolean;
+  workoutCompleted: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -103,6 +124,13 @@ interface WorkoutStoreState {
   selectedDay: DayOfWeek;
   /** Which preset of `selectedDay` is currently active/visible. Defaults to "Standard". */
   currentPreset: string;
+  /** The in-progress workout, or null when nothing is being logged. */
+  activeSession: ActiveSession | null;
+  /** exerciseId -> the most recent logged result per set index, used for
+   *  "ghost" placeholders on the next time that exercise is logged. */
+  history: Record<string, Log[]>;
+
+  // --- Dashboard / planning actions -----------------------------------
 
   /** Switch the active day. Keeps the current preset if it exists on the new
    *  day, otherwise falls back to that day's first available preset. */
@@ -136,6 +164,45 @@ interface WorkoutStoreState {
    *  re-renders on change). */
   getPresetsForDay: (day: DayOfWeek) => string[];
   getExercisesForActivePreset: () => Exercise[];
+
+  // --- Active workout / logging actions --------------------------------
+
+  /** Snapshot a day + preset into a fresh `activeSession`, seeding one
+   *  WorkoutSet per exercise's targetSets. Returns false (and does nothing)
+   *  if that preset has no exercises to log. */
+  startWorkout: (day: DayOfWeek, presetName: string) => boolean;
+
+  /** Read-model for ActiveWorkoutScreen: the current session's title +
+   *  exercise list, or null if nothing is active. */
+  getActiveWorkout: () => { title: string; exercises: Exercise[] } | null;
+
+  /** Update the live text of a set's weight/reps field while typing. */
+  updateSetField: (
+    exerciseId: string,
+    setId: string,
+    field: 'weight' | 'reps',
+    value: string
+  ) => void;
+
+  /** Append a new, empty set row to an exercise in the active session. */
+  addSet: (exerciseId: string) => void;
+
+  /** Remove a set row from an exercise (a session always keeps at least one). */
+  removeSet: (exerciseId: string, setId: string) => void;
+
+  /** Confirm a set: falls back to the ghost weight/reps if the fields were
+   *  left blank, marks it completed, records it into `history`, and advances
+   *  `currentExerciseIndex` to the next exercise with incomplete sets. */
+  logSet: (exerciseId: string, setId: string) => LogSetResult;
+
+  /** First not-yet-completed set id for an exercise, or null. */
+  getNextIncompleteSetId: (exerciseId: string) => string | null;
+
+  /** Previously logged weight/reps for a given exercise + set index. */
+  getGhostForSetIndex: (exerciseId: string, index: number) => Log | null;
+
+  /** Clear the active session (used when exiting/finishing a workout). */
+  resetActiveWorkout: () => void;
 }
 
 export const useWorkoutStore = create<WorkoutStoreState>()(
@@ -144,6 +211,10 @@ export const useWorkoutStore = create<WorkoutStoreState>()(
       plan: createDefaultPlan(),
       selectedDay: 'Monday',
       currentPreset: 'Standard',
+      activeSession: null,
+      history: {},
+
+      // --- Dashboard / planning actions ---------------------------------
 
       setSelectedDay: (day) => {
         set((state) => {
@@ -266,13 +337,219 @@ export const useWorkoutStore = create<WorkoutStoreState>()(
         const { plan, selectedDay, currentPreset } = get();
         return plan[selectedDay]?.presets[currentPreset] ?? [];
       },
+
+      // --- Active workout / logging actions ------------------------------
+
+      startWorkout: (day, presetName) => {
+        const exercises = get().plan[day]?.presets[presetName] ?? [];
+        if (exercises.length === 0) return false;
+
+        const exerciseSets: Record<string, WorkoutSet[]> = {};
+        exercises.forEach((exercise) => {
+          const setCount = Math.max(exercise.targetSets, 1);
+          exerciseSets[exercise.id] = Array.from({ length: setCount }, () => ({
+            id: generateSetId(),
+            weight: '',
+            reps: '',
+            isCompleted: false,
+          }));
+        });
+
+        set({
+          activeSession: {
+            day,
+            presetName,
+            exercises,
+            exerciseSets,
+            currentExerciseIndex: 0,
+            completed: false,
+          },
+        });
+        return true;
+      },
+
+      getActiveWorkout: () => {
+        const { activeSession } = get();
+        if (!activeSession) return null;
+        return {
+          title: `${activeSession.day} · ${activeSession.presetName}`,
+          exercises: activeSession.exercises,
+        };
+      },
+
+      updateSetField: (exerciseId, setId, field, value) => {
+        set((state) => {
+          if (!state.activeSession) return state;
+          const sets = state.activeSession.exerciseSets[exerciseId] ?? [];
+          const nextSets = sets.map((setItem) =>
+            setItem.id === setId ? { ...setItem, [field]: value } : setItem
+          );
+          return {
+            activeSession: {
+              ...state.activeSession,
+              exerciseSets: {
+                ...state.activeSession.exerciseSets,
+                [exerciseId]: nextSets,
+              },
+            },
+          };
+        });
+      },
+
+      addSet: (exerciseId) => {
+        set((state) => {
+          if (!state.activeSession) return state;
+          const sets = state.activeSession.exerciseSets[exerciseId] ?? [];
+          const newSet: WorkoutSet = {
+            id: generateSetId(),
+            weight: '',
+            reps: '',
+            isCompleted: false,
+          };
+          return {
+            activeSession: {
+              ...state.activeSession,
+              exerciseSets: {
+                ...state.activeSession.exerciseSets,
+                [exerciseId]: [...sets, newSet],
+              },
+            },
+          };
+        });
+      },
+
+      removeSet: (exerciseId, setId) => {
+        set((state) => {
+          if (!state.activeSession) return state;
+          const sets = state.activeSession.exerciseSets[exerciseId] ?? [];
+          if (sets.length <= 1) return state;
+          return {
+            activeSession: {
+              ...state.activeSession,
+              exerciseSets: {
+                ...state.activeSession.exerciseSets,
+                [exerciseId]: sets.filter((setItem) => setItem.id !== setId),
+              },
+            },
+          };
+        });
+      },
+
+      logSet: (exerciseId, setId) => {
+        const state = get();
+        const { activeSession } = state;
+        if (!activeSession) {
+          return { success: false, exerciseCompleted: false, workoutCompleted: false };
+        }
+
+        const sets = activeSession.exerciseSets[exerciseId] ?? [];
+        const setIndex = sets.findIndex((setItem) => setItem.id === setId);
+        const currentSet = sets[setIndex];
+        if (!currentSet || currentSet.isCompleted) {
+          return { success: false, exerciseCompleted: false, workoutCompleted: false };
+        }
+
+        const ghost = state.getGhostForSetIndex(exerciseId, setIndex);
+        const weightText =
+          currentSet.weight.trim().length > 0
+            ? currentSet.weight.trim()
+            : ghost
+              ? formatWeight(ghost.weight)
+              : '';
+        const repsText =
+          currentSet.reps.trim().length > 0
+            ? currentSet.reps.trim()
+            : ghost
+              ? String(ghost.reps)
+              : '';
+
+        const weightValue = parseFloat(weightText);
+        const repsValue = parseInt(repsText, 10);
+
+        if (
+          weightText.length === 0 ||
+          repsText.length === 0 ||
+          Number.isNaN(weightValue) ||
+          Number.isNaN(repsValue)
+        ) {
+          return { success: false, exerciseCompleted: false, workoutCompleted: false };
+        }
+
+        const updatedSets = sets.map((setItem, index) =>
+          index === setIndex
+            ? { ...setItem, weight: weightText, reps: repsText, isCompleted: true }
+            : setItem
+        );
+        const exerciseCompleted = updatedSets.every((setItem) => setItem.isCompleted);
+
+        const nextExerciseSets: Record<string, WorkoutSet[]> = {
+          ...activeSession.exerciseSets,
+          [exerciseId]: updatedSets,
+        };
+        const workoutCompleted = activeSession.exercises.every((exercise) =>
+          (nextExerciseSets[exercise.id] ?? []).every((setItem) => setItem.isCompleted)
+        );
+
+        let nextExerciseIndex = activeSession.currentExerciseIndex;
+        if (exerciseCompleted) {
+          const currentIdx = activeSession.exercises.findIndex((ex) => ex.id === exerciseId);
+          for (let i = currentIdx + 1; i < activeSession.exercises.length; i += 1) {
+            const candidate = activeSession.exercises[i];
+            const candidateSets = nextExerciseSets[candidate.id] ?? [];
+            if (candidateSets.some((setItem) => !setItem.isCompleted)) {
+              nextExerciseIndex = i;
+              break;
+            }
+          }
+        }
+
+        set((s) => {
+          if (!s.activeSession) return s;
+          const historyForExercise = [...(s.history[exerciseId] ?? [])];
+          historyForExercise[setIndex] = { weight: weightValue, reps: repsValue };
+
+          return {
+            activeSession: {
+              ...s.activeSession,
+              exerciseSets: nextExerciseSets,
+              currentExerciseIndex: nextExerciseIndex,
+              completed: workoutCompleted,
+            },
+            history: {
+              ...s.history,
+              [exerciseId]: historyForExercise,
+            },
+          };
+        });
+
+        return { success: true, exerciseCompleted, workoutCompleted };
+      },
+
+      getNextIncompleteSetId: (exerciseId) => {
+        const { activeSession } = get();
+        if (!activeSession) return null;
+        const sets = activeSession.exerciseSets[exerciseId] ?? [];
+        const next = sets.find((setItem) => !setItem.isCompleted);
+        return next ? next.id : null;
+      },
+
+      getGhostForSetIndex: (exerciseId, index) => {
+        const entry = get().history[exerciseId]?.[index];
+        return entry ?? null;
+      },
+
+      resetActiveWorkout: () => {
+        set({ activeSession: null });
+      },
     }),
     {
       name: 'gym-progress-tracker-workout-store',
       storage: createJSONStorage(() => AsyncStorage),
       // No `partialize` needed: JSON.stringify already drops the function
-      // (action) properties automatically, so only `plan`, `selectedDay`,
-      // and `currentPreset` ever hit AsyncStorage.
+      // (action) properties automatically, so `plan`, `selectedDay`,
+      // `currentPreset`, `activeSession`, and `history` are what persist —
+      // which conveniently means an in-progress workout survives an app
+      // restart too.
     }
   )
 );

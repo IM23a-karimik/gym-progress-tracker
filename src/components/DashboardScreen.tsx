@@ -11,6 +11,7 @@ import {
   Platform,
   StatusBar as RNStatusBar,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkoutStore, DAYS, EXERCISE_LIBRARY, CATEGORY_ORDER } from '../store/workoutStore';
@@ -32,6 +33,7 @@ export default function DashboardScreen({ onStartWorkout }: DashboardScreenProps
   const addPreset = useWorkoutStore((state) => state.addPreset);
   const addExerciseToPreset = useWorkoutStore((state) => state.addExerciseToPreset);
   const removeExerciseFromPreset = useWorkoutStore((state) => state.removeExerciseFromPreset);
+  const startWorkout = useWorkoutStore((state) => state.startWorkout);
 
   const [isAddExerciseModalVisible, setAddExerciseModalVisible] = useState(false);
   const [isAddPresetModalVisible, setAddPresetModalVisible] = useState(false);
@@ -92,6 +94,18 @@ export default function DashboardScreen({ onStartWorkout }: DashboardScreenProps
     setNewPresetName('');
   };
 
+  const handleStartWorkout = () => {
+    const started = startWorkout(selectedDay, currentPreset);
+    if (!started) {
+      Alert.alert(
+        'No Exercises Yet',
+        `Add at least one exercise to the "${currentPreset}" preset before starting ${selectedDay}'s workout.`
+      );
+      return;
+    }
+    onStartWorkout();
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -107,7 +121,7 @@ export default function DashboardScreen({ onStartWorkout }: DashboardScreenProps
           </View>
           <TouchableOpacity
             style={styles.startButton}
-            onPress={onStartWorkout}
+            onPress={handleStartWorkout}
             activeOpacity={0.85}
           >
             <Ionicons name="play" size={16} color="#000000" />
