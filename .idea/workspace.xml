@@ -4,13 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="717f258e-d84b-4221-98b6-92ce07a389e9" name="Changes" comment="App">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/ActiveWorkoutScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/ActiveWorkoutScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/DashboardScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/DashboardScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/store/workoutStore.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/store/workoutStore.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/types/workout.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/types/workout.ts" afterDir="false" />
-    </list>
+    <list default="true" id="717f258e-d84b-4221-98b6-92ce07a389e9" name="Changes" comment="add presets" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -72,7 +66,7 @@
       <workItem from="1782999702120" duration="1864000" />
       <workItem from="1783061019846" duration="294000" />
       <workItem from="1783069480165" duration="31000" />
-      <workItem from="1783069555554" duration="2038000" />
+      <workItem from="1783069555554" duration="2406000" />
     </task>
     <task id="LOCAL-00001" summary="App">
       <option name="closed" value="true" />
@@ -82,7 +76,15 @@
       <option name="project" value="LOCAL" />
       <updated>1783001248743</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="add presets">
+      <option name="closed" value="true" />
+      <created>1783075922601</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1783075922601</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -90,6 +92,7 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="App" />
-    <option name="LAST_COMMIT_MESSAGE" value="App" />
+    <MESSAGE value="add presets" />
+    <option name="LAST_COMMIT_MESSAGE" value="add presets" />
   </component>
 </project>

@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { useWorkoutStore, ExerciseCategory, PlannedExercise } from '../store/workoutStore';
 
+// Mock Database for the premium selection modal
+// In the future, this can be swapped with your Supabase fetch logic
 const EXERCISE_DATABASE: Array<{ id: string; name: string; category: ExerciseCategory }> = [
   { id: 'db_1', name: 'Barbell Bench Press', category: 'Chest' },
   { id: 'db_2', name: 'Incline Dumbbell Press', category: 'Chest' },
@@ -40,9 +42,11 @@ const COLORS = {
   textSecondary: '#888888',
   danger: '#FF4444',
   inputBg: '#080808',
+  borderDark: '#1A1A1A',
 };
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const CATEGORIES: Array<ExerciseCategory | 'All'> = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'];
 
 export default function DashboardScreen() {
   const {
@@ -61,7 +65,7 @@ export default function DashboardScreen() {
 
   const currentDayPlan = days[selectedDay];
   const activePresetId = currentDayPlan?.activePresetId || 'standard';
-  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Standard Workout', exercises: [] };
+  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Default Split', exercises: [] };
 
   const handleAddExercise = (exerciseDef: typeof EXERCISE_DATABASE[0]) => {
     addExerciseToPreset(selectedDay, activePresetId, {
@@ -81,7 +85,7 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-        {/* Day Selector Tabs */}
+        {/* Day Selector Navigation */}
         <View style={styles.dayTabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayTabsScroll}>
             {DAYS_OF_WEEK.map((day) => {
@@ -101,7 +105,7 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* Preset Selector Sub-Tabs */}
+        {/* Dynamic Preset Navigation Tabs */}
         <View style={styles.presetTabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetTabsScroll}>
             {currentDayPlan && Object.values(currentDayPlan.presets).map((preset) => {
@@ -121,7 +125,7 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* Exercises Content List */}
+        {/* Active Exercise List */}
         <FlatList
           data={activePreset.exercises}
           keyExtractor={(item) => item.id}
@@ -129,7 +133,7 @@ export default function DashboardScreen() {
           renderItem={({ item, index }) => (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
+                <View style={styles.cardTitleContainer}>
                   <Text style={styles.cardTitle}>{item.name}</Text>
                   <Text style={styles.cardSubtitle}>{item.category}</Text>
                 </View>
@@ -141,28 +145,30 @@ export default function DashboardScreen() {
                     <Text style={styles.iconText}>↓</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => removeExerciseFromPreset(selectedDay, activePresetId, item.id)} style={styles.iconBtn}>
-                    <Text style={[styles.iconText, { color: COLORS.danger }]}>✕</Text>
+                    <Text style={[styles.iconText, styles.dangerText]}>✕</Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
               <View style={styles.metricsContainer}>
                 <View style={styles.metricInputGroup}>
-                  <Text style={styles.metricLabel}>SETS</Text>
+                  <Text style={styles.metricLabel}>TARGET SETS</Text>
                   <TextInput
                     style={styles.metricInput}
                     value={item.targetSets}
                     onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetSets: text })}
                     keyboardType="numeric"
+                    placeholderTextColor={COLORS.textSecondary}
                   />
                 </View>
                 <View style={styles.metricInputGroup}>
-                  <Text style={styles.metricLabel}>REPS</Text>
+                  <Text style={styles.metricLabel}>TARGET REPS</Text>
                   <TextInput
                     style={styles.metricInput}
                     value={item.targetReps}
                     onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetReps: text })}
                     keyboardType="numeric"
+                    placeholderTextColor={COLORS.textSecondary}
                   />
                 </View>
               </View>
@@ -170,35 +176,36 @@ export default function DashboardScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Tap "+ Add Exercise" to design this plan.</Text>
+              <Text style={styles.emptyText}>No exercises in this preset.</Text>
+              <Text style={styles.emptySubText}>Tap the button below to design your plan.</Text>
             </View>
           }
         />
 
-        {/* Elegant Bottom Button Frame */}
+        {/* Bottom Action Bar */}
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-            <Text style={styles.addButtonText}>+ ADD EXERCISE</Text>
+            <Text style={styles.addButtonText}>+ ADD EXERCISE TO PRESET</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Modern Selection Slide-Up Drawer */}
+        {/* Premium Full-Screen Modal for Exercise Selection */}
         <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Exercise</Text>
+              <Text style={styles.modalTitle}>Select Exercise</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalClose}>Close</Text>
+                <Text style={styles.modalClose}>Cancel</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.categoryFilterContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
-                {['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'].map((cat) => (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
+                {CATEGORIES.map((cat) => (
                   <TouchableOpacity
                     key={cat}
                     style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
-                    onPress={() => setSelectedCategory(cat as any)}
+                    onPress={() => setSelectedCategory(cat)}
                   >
                     <Text style={[styles.categoryPillText, selectedCategory === cat && styles.categoryPillTextActive]}>
                       {cat}
@@ -218,7 +225,9 @@ export default function DashboardScreen() {
                     <Text style={styles.dbItemName}>{item.name}</Text>
                     <Text style={styles.dbItemCategory}>{item.category}</Text>
                   </View>
-                  <Text style={styles.dbItemAddIcon}>+</Text>
+                  <View style={styles.dbItemAddButton}>
+                    <Text style={styles.dbItemAddIcon}>+</Text>
+                  </View>
                 </TouchableOpacity>
               )}
             />
@@ -237,48 +246,48 @@ const styles = StyleSheet.create({
   },
   dayTabsContainer: {
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderColor: '#111111',
+    borderBottomColor: COLORS.borderDark,
   },
   dayTabsScroll: {
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 10,
   },
   dayTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#0a0a0a',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: COLORS.inputBg,
   },
   dayTabActive: {
-    backgroundColor: '#1c1c1c',
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.accent,
   },
   dayTabText: {
     color: COLORS.textSecondary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   dayTabTextActive: {
     color: COLORS.accent,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   presetTabsContainer: {
-    paddingVertical: 12,
+    paddingVertical: 16,
   },
   presetTabsScroll: {
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 12,
   },
   presetTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#222222',
+    borderColor: COLORS.borderDark,
   },
   presetTabActive: {
     backgroundColor: COLORS.accent,
@@ -287,54 +296,64 @@ const styles = StyleSheet.create({
   presetTabText: {
     color: COLORS.textSecondary,
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: 14,
   },
   presetTabTextActive: {
     color: COLORS.background,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 110,
+    paddingBottom: 120, // Extra padding to clear the absolute bottom bar
   },
   emptyContainer: {
-    paddingTop: 60,
+    paddingTop: 80,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyText: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  emptySubText: {
     color: COLORS.textSecondary,
     fontSize: 14,
-    textAlign: 'center',
   },
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: COLORS.borderDark,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 14,
+    marginBottom: 16,
+  },
+  cardTitleContainer: {
+    flex: 1,
+    paddingRight: 12,
   },
   cardTitle: {
     color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   cardSubtitle: {
     color: COLORS.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 2,
+    letterSpacing: 1,
+    marginTop: 4,
   },
   cardActions: {
     flexDirection: 'row',
-    gap: 14,
+    gap: 16,
     alignItems: 'center',
   },
   iconBtn: {
@@ -342,31 +361,35 @@ const styles = StyleSheet.create({
   },
   iconText: {
     color: COLORS.textSecondary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  dangerText: {
+    color: COLORS.danger,
   },
   metricsContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
   },
   metricInputGroup: {
     flex: 1,
   },
   metricLabel: {
     color: COLORS.textSecondary,
-    fontSize: 10,
-    fontWeight: '700',
-    marginBottom: 6,
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
   metricInput: {
     backgroundColor: COLORS.inputBg,
     color: COLORS.accent,
-    fontSize: 15,
-    fontWeight: '700',
-    borderRadius: 6,
-    paddingVertical: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
+    borderRadius: 10,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: COLORS.borderDark,
     textAlign: 'center',
   },
   bottomBar: {
@@ -374,20 +397,22 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderDark,
   },
   addButton: {
     backgroundColor: COLORS.accent,
-    borderRadius: 8,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
   },
   addButtonText: {
     color: COLORS.background,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   modalContainer: {
     flex: 1,
@@ -397,43 +422,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 20 : 20,
+    paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#111111',
+    borderBottomColor: COLORS.borderDark,
   },
   modalTitle: {
     color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   modalClose: {
     color: COLORS.accent,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   categoryFilterContainer: {
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#111111',
+    borderBottomColor: COLORS.borderDark,
+  },
+  categoryScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
   },
   categoryPill: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     backgroundColor: COLORS.card,
-    marginRight: 8,
+    borderWidth: 1,
+    borderColor: COLORS.borderDark,
   },
   categoryPillActive: {
     backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
   },
   categoryPillText: {
     color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   categoryPillTextActive: {
     color: COLORS.background,
-    fontWeight: '700',
   },
   modalListContent: {
     padding: 16,
@@ -443,23 +475,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.card,
-    padding: 14,
-    borderRadius: 8,
-    marginBottom: 8,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.borderDark,
   },
   dbItemName: {
     color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   dbItemCategory: {
     color: COLORS.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 13,
+    marginTop: 4,
+  },
+  dbItemAddButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.inputBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
   },
   dbItemAddIcon: {
     color: COLORS.accent,
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
+    lineHeight: 20,
   },
 });
