@@ -1,546 +1,465 @@
-import { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
   View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Modal,
+  FlatList,
+  TextInput,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { useWorkoutStore, ExerciseCategory, PlannedExercise } from '../store/workoutStore';
 
-import { useWorkoutStore } from '../store/workoutStore';
-import type { Workout } from '../types/workout';
+const EXERCISE_DATABASE: Array<{ id: string; name: string; category: ExerciseCategory }> = [
+  { id: 'db_1', name: 'Barbell Bench Press', category: 'Chest' },
+  { id: 'db_2', name: 'Incline Dumbbell Press', category: 'Chest' },
+  { id: 'db_3', name: 'Cable Crossovers', category: 'Chest' },
+  { id: 'db_4', name: 'Deadlift', category: 'Back' },
+  { id: 'db_5', name: 'Lat Pulldown', category: 'Back' },
+  { id: 'db_6', name: 'Barbell Row', category: 'Back' },
+  { id: 'db_7', name: 'Squat', category: 'Legs' },
+  { id: 'db_8', name: 'Leg Press', category: 'Legs' },
+  { id: 'db_9', name: 'Romanian Deadlift', category: 'Legs' },
+  { id: 'db_10', name: 'Overhead Press', category: 'Shoulders' },
+  { id: 'db_11', name: 'Lateral Raises', category: 'Shoulders' },
+  { id: 'db_12', name: 'Barbell Curl', category: 'Arms' },
+  { id: 'db_13', name: 'Tricep Extension', category: 'Arms' },
+  { id: 'db_14', name: 'Cable Crunches', category: 'Abs' },
+  { id: 'db_15', name: 'Hanging Leg Raises', category: 'Abs' },
+];
 
-interface DashboardScreenProps {
-  onStartWorkout: () => void;
-}
+const COLORS = {
+  background: '#000000',
+  card: '#121212',
+  accent: '#D4AF37',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#888888',
+  danger: '#FF4444',
+  inputBg: '#080808',
+};
 
-function getCurrentWeekdayIndex() {
-  const sundayFirstIndex = new Date().getDay();
-  return (sundayFirstIndex + 6) % 7;
-}
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-function getExerciseDraft(workout: Workout) {
-  return workout.exercises.map((exercise) => exercise.name).join('\n');
-}
+export default function DashboardScreen() {
+  const {
+    selectedDay,
+    days,
+    setSelectedDay,
+    setActivePreset,
+    addExerciseToPreset,
+    removeExerciseFromPreset,
+    updateExerciseInPreset,
+    reorderExercise,
+  } = useWorkoutStore();
 
-export default function DashboardScreen({
-  onStartWorkout,
-}: DashboardScreenProps) {
-  const split = useWorkoutStore((state) => state.split);
-  const workouts = useWorkoutStore((state) => state.workouts);
-  const selectedDayIndex = useWorkoutStore((state) => state.selectedDayIndex);
-  const selectDay = useWorkoutStore((state) => state.selectDay);
-  const startWorkout = useWorkoutStore((state) => state.startWorkout);
-  const updateWorkoutPlan = useWorkoutStore((state) => state.updateWorkoutPlan);
-  const selectedWorkout = useWorkoutStore((state) => state.getSelectedWorkout());
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(selectedWorkout.title);
-  const [exerciseDraft, setExerciseDraft] = useState(
-    getExerciseDraft(selectedWorkout),
-  );
-  const currentWeekdayIndex = useMemo(() => getCurrentWeekdayIndex(), []);
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<ExerciseCategory | 'All'>('All');
 
-  function openEditor() {
-    setTitleDraft(selectedWorkout.title);
-    setExerciseDraft(getExerciseDraft(selectedWorkout));
-    setIsEditorOpen(true);
-  }
+  const currentDayPlan = days[selectedDay];
+  const activePresetId = currentDayPlan?.activePresetId || 'standard';
+  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Standard Workout', exercises: [] };
 
-  function closeEditor() {
-    setIsEditorOpen(false);
-  }
+  const handleAddExercise = (exerciseDef: typeof EXERCISE_DATABASE[0]) => {
+    addExerciseToPreset(selectedDay, activePresetId, {
+      name: exerciseDef.name,
+      category: exerciseDef.category,
+      targetSets: '3',
+      targetReps: '10',
+    });
+    setModalVisible(false);
+  };
 
-  function saveEditor() {
-    const exerciseNames = exerciseDraft
-      .split('\n')
-      .map((name) => name.trim())
-      .filter(Boolean);
-
-    updateWorkoutPlan(selectedWorkout.id, titleDraft, exerciseNames);
-    setIsEditorOpen(false);
-  }
-
-  function handleStartWorkout() {
-    startWorkout(selectedWorkout.id);
-    onStartWorkout();
-  }
-
-  const canStartWorkout = selectedWorkout.exercises.length > 0;
+  const filteredExercises = selectedCategory === 'All'
+    ? EXERCISE_DATABASE
+    : EXERCISE_DATABASE.filter(ex => ex.category === selectedCategory);
 
   return (
-    <View style={styles.screen}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Weekly Split</Text>
-          <Text style={styles.title}>Progressive Overload</Text>
-        </View>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-        <View style={styles.splitRow}>
-          {split.map((day) => {
-            const workout = workouts[day.workoutId];
-            const isToday = day.dayIndex === currentWeekdayIndex;
-            const isSelected = day.dayIndex === selectedDayIndex;
-
-            return (
-              <Pressable
-                accessibilityRole="button"
-                key={day.id}
-                onPress={() => selectDay(day.dayIndex)}
-                style={[
-                  styles.splitTile,
-                  isSelected && styles.splitTileSelected,
-                  isToday && styles.splitTileToday,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.splitLetter,
-                    isToday && styles.splitLetterToday,
-                  ]}
+        {/* Day Selector Tabs */}
+        <View style={styles.dayTabsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayTabsScroll}>
+            {DAYS_OF_WEEK.map((day) => {
+              const isSelected = day === selectedDay;
+              return (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.dayTab, isSelected && styles.dayTabActive]}
+                  onPress={() => setSelectedDay(day)}
                 >
-                  {workout.shortLabel}
-                </Text>
-                <Text
-                  style={[
-                    styles.splitDayName,
-                    isToday && styles.splitDayNameToday,
-                  ]}
-                >
-                  {day.dayName}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.planHeader}>
-          <View style={styles.planTitleBlock}>
-            <Text style={styles.planLabel}>Active Plan</Text>
-            <Text style={styles.planTitle}>{selectedWorkout.title}</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={openEditor}
-            style={styles.editButton}
-          >
-            <Text style={styles.editButtonText}>Edit</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.planPanel}>
-          {selectedWorkout.exercises.length > 0 ? (
-            selectedWorkout.exercises.map((exercise, index) => (
-              <View key={exercise.id} style={styles.exerciseRow}>
-                <View style={styles.exerciseIndex}>
-                  <Text style={styles.exerciseIndexText}>{index + 1}</Text>
-                </View>
-                <View style={styles.exerciseInfo}>
-                  <Text style={styles.exerciseName}>{exercise.name}</Text>
-                  <Text style={styles.exerciseMeta}>
-                    {exercise.targetSets} sets x {exercise.targetReps} reps
+                  <Text style={[styles.dayTabText, isSelected && styles.dayTabTextActive]}>
+                    {day.substring(0, 3)}
                   </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Preset Selector Sub-Tabs */}
+        <View style={styles.presetTabsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetTabsScroll}>
+            {currentDayPlan && Object.values(currentDayPlan.presets).map((preset) => {
+              const isActive = preset.id === activePresetId;
+              return (
+                <TouchableOpacity
+                  key={preset.id}
+                  style={[styles.presetTab, isActive && styles.presetTabActive]}
+                  onPress={() => setActivePreset(selectedDay, preset.id)}
+                >
+                  <Text style={[styles.presetTabText, isActive && styles.presetTabTextActive]}>
+                    {preset.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Exercises Content List */}
+        <FlatList
+          data={activePreset.exercises}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item, index }) => (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.cardTitle}>{item.name}</Text>
+                  <Text style={styles.cardSubtitle}>{item.category}</Text>
                 </View>
-                <Text style={styles.exerciseCategory}>{exercise.category}</Text>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'up')} style={styles.iconBtn}>
+                    <Text style={styles.iconText}>↑</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'down')} style={styles.iconBtn}>
+                    <Text style={styles.iconText}>↓</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => removeExerciseFromPreset(selectedDay, activePresetId, item.id)} style={styles.iconBtn}>
+                    <Text style={[styles.iconText, { color: COLORS.danger }]}>✕</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            ))
-          ) : (
-            <View style={styles.restState}>
-              <Text style={styles.restTitle}>Rest Day</Text>
-              <Text style={styles.restCopy}>
-                No lifts scheduled. Recover hard and come back heavier.
-              </Text>
+
+              <View style={styles.metricsContainer}>
+                <View style={styles.metricInputGroup}>
+                  <Text style={styles.metricLabel}>SETS</Text>
+                  <TextInput
+                    style={styles.metricInput}
+                    value={item.targetSets}
+                    onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetSets: text })}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.metricInputGroup}>
+                  <Text style={styles.metricLabel}>REPS</Text>
+                  <TextInput
+                    style={styles.metricInput}
+                    value={item.targetReps}
+                    onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetReps: text })}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
             </View>
           )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Tap "+ Add Exercise" to design this plan.</Text>
+            </View>
+          }
+        />
+
+        {/* Elegant Bottom Button Frame */}
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addButtonText}>+ ADD EXERCISE</Text>
+          </TouchableOpacity>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={!canStartWorkout}
-          onPress={handleStartWorkout}
-          style={[
-            styles.startButton,
-            !canStartWorkout && styles.startButtonDisabled,
-          ]}
-        >
-          <Text
-            style={[
-              styles.startButtonText,
-              !canStartWorkout && styles.startButtonTextDisabled,
-            ]}
-          >
-            Start Workout
-          </Text>
-        </Pressable>
-      </ScrollView>
-
-      <Modal
-        animationType="slide"
-        onRequestClose={closeEditor}
-        transparent
-        visible={isEditorOpen}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalRoot}
-        >
-          <Pressable style={styles.modalBackdrop} onPress={closeEditor} />
-          <View style={styles.editorSheet}>
-            <View style={styles.editorHandle} />
-            <Text style={styles.editorTitle}>Edit Plan</Text>
-
-            <Text style={styles.inputLabel}>Plan Name</Text>
-            <TextInput
-              onChangeText={setTitleDraft}
-              placeholder="Push Day"
-              placeholderTextColor="#6F6F6F"
-              selectionColor="#D4AF37"
-              style={styles.editorInput}
-              value={titleDraft}
-            />
-
-            <Text style={styles.inputLabel}>Exercises</Text>
-            <TextInput
-              multiline
-              onChangeText={setExerciseDraft}
-              placeholder="One exercise per line"
-              placeholderTextColor="#6F6F6F"
-              selectionColor="#D4AF37"
-              style={styles.exerciseEditorInput}
-              textAlignVertical="top"
-              value={exerciseDraft}
-            />
-
-            <View style={styles.editorActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={closeEditor}
-                style={styles.cancelButton}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={saveEditor}
-                style={styles.saveButton}
-              >
-                <Text style={styles.saveButtonText}>Save Plan</Text>
-              </Pressable>
+        {/* Modern Selection Slide-Up Drawer */}
+        <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Exercise</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalClose}>Close</Text>
+              </TouchableOpacity>
             </View>
+
+            <View style={styles.categoryFilterContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
+                {['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'].map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
+                    onPress={() => setSelectedCategory(cat as any)}
+                  >
+                    <Text style={[styles.categoryPillText, selectedCategory === cat && styles.categoryPillTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <FlatList
+              data={filteredExercises}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.modalListContent}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.dbItemCard} onPress={() => handleAddExercise(item)}>
+                  <View>
+                    <Text style={styles.dbItemName}>{item.name}</Text>
+                    <Text style={styles.dbItemCategory}>{item.category}</Text>
+                  </View>
+                  <Text style={styles.dbItemAddIcon}>+</Text>
+                </TouchableOpacity>
+              )}
+            />
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    </View>
+        </Modal>
+
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: '#000000',
+  container: {
     flex: 1,
+    backgroundColor: COLORS.background,
   },
-  content: {
-    paddingBottom: 32,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  eyebrow: {
-    color: '#D4AF37',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: '#F5F5F5',
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  splitRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 28,
-  },
-  splitTile: {
-    alignItems: 'center',
-    backgroundColor: '#121212',
-    borderColor: '#232323',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    minHeight: 68,
-    justifyContent: 'center',
-  },
-  splitTileSelected: {
-    borderColor: '#F5F5F5',
-  },
-  splitTileToday: {
-    backgroundColor: '#D4AF37',
-    borderColor: '#D4AF37',
-  },
-  splitLetter: {
-    color: '#F5F5F5',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  splitLetterToday: {
-    color: '#000000',
-  },
-  splitDayName: {
-    color: '#A0A0A0',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0,
-    marginTop: 4,
-    textTransform: 'uppercase',
-  },
-  splitDayNameToday: {
-    color: '#000000',
-  },
-  planHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  planTitleBlock: {
-    flex: 1,
-    paddingRight: 16,
-  },
-  planLabel: {
-    color: '#A0A0A0',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0,
-    marginBottom: 5,
-    textTransform: 'uppercase',
-  },
-  planTitle: {
-    color: '#F5F5F5',
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  editButton: {
-    alignItems: 'center',
-    backgroundColor: '#121212',
-    borderColor: '#D4AF37',
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  editButtonText: {
-    color: '#D4AF37',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  planPanel: {
-    backgroundColor: '#121212',
-    borderColor: '#232323',
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 18,
-    overflow: 'hidden',
-  },
-  exerciseRow: {
-    alignItems: 'center',
-    borderBottomColor: '#232323',
+  dayTabsContainer: {
+    paddingTop: 16,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    flexDirection: 'row',
-    minHeight: 76,
+    borderColor: '#111111',
+  },
+  dayTabsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  dayTab: {
+    paddingVertical: 8,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  exerciseIndex: {
-    alignItems: 'center',
-    backgroundColor: '#000000',
     borderRadius: 8,
-    height: 38,
-    justifyContent: 'center',
-    marginRight: 12,
-    width: 38,
+    backgroundColor: '#0a0a0a',
   },
-  exerciseIndexText: {
-    color: '#D4AF37',
-    fontSize: 14,
-    fontWeight: '900',
+  dayTabActive: {
+    backgroundColor: '#1c1c1c',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
   },
-  exerciseInfo: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  exerciseName: {
-    color: '#F5F5F5',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0,
-  },
-  exerciseMeta: {
-    color: '#A0A0A0',
+  dayTabText: {
+    color: COLORS.textSecondary,
     fontSize: 13,
     fontWeight: '600',
-    marginTop: 5,
   },
-  exerciseCategory: {
-    color: '#D4AF37',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0,
-    textTransform: 'uppercase',
-  },
-  restState: {
-    alignItems: 'center',
-    minHeight: 180,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  restTitle: {
-    color: '#F5F5F5',
-    fontSize: 24,
-    fontWeight: '900',
-    marginBottom: 8,
-  },
-  restCopy: {
-    color: '#A0A0A0',
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
-  },
-  startButton: {
-    alignItems: 'center',
-    backgroundColor: '#D4AF37',
-    borderRadius: 8,
-    minHeight: 58,
-    justifyContent: 'center',
-  },
-  startButtonDisabled: {
-    backgroundColor: '#1D1D1D',
-  },
-  startButtonText: {
-    color: '#000000',
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0,
-    textTransform: 'uppercase',
-  },
-  startButtonTextDisabled: {
-    color: '#666666',
-  },
-  modalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  editorSheet: {
-    backgroundColor: '#121212',
-    borderColor: '#232323',
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    borderWidth: 1,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  editorHandle: {
-    alignSelf: 'center',
-    backgroundColor: '#3A3A3A',
-    borderRadius: 8,
-    height: 4,
-    marginBottom: 18,
-    width: 46,
-  },
-  editorTitle: {
-    color: '#F5F5F5',
-    fontSize: 24,
-    fontWeight: '900',
-    marginBottom: 18,
-  },
-  inputLabel: {
-    color: '#A0A0A0',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  editorInput: {
-    backgroundColor: '#000000',
-    borderColor: '#2A2A2A',
-    borderRadius: 8,
-    borderWidth: 1,
-    color: '#F5F5F5',
-    fontSize: 17,
+  dayTabTextActive: {
+    color: COLORS.accent,
     fontWeight: '700',
-    marginBottom: 18,
-    minHeight: 54,
-    paddingHorizontal: 14,
   },
-  exerciseEditorInput: {
-    backgroundColor: '#000000',
-    borderColor: '#2A2A2A',
-    borderRadius: 8,
-    borderWidth: 1,
-    color: '#F5F5F5',
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 23,
-    minHeight: 160,
-    paddingHorizontal: 14,
+  presetTabsContainer: {
     paddingVertical: 12,
   },
-  editorActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
+  presetTabsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
   },
-  cancelButton: {
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    borderColor: '#2A2A2A',
-    borderRadius: 8,
+  presetTab: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
     borderWidth: 1,
-    flex: 1,
-    minHeight: 54,
-    justifyContent: 'center',
+    borderColor: '#222222',
   },
-  cancelButtonText: {
-    color: '#F5F5F5',
-    fontSize: 15,
-    fontWeight: '900',
+  presetTabActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
   },
-  saveButton: {
+  presetTabText: {
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  presetTabTextActive: {
+    color: COLORS.background,
+    fontWeight: '700',
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 110,
+  },
+  emptyContainer: {
+    paddingTop: 60,
     alignItems: 'center',
-    backgroundColor: '#D4AF37',
-    borderRadius: 8,
-    flex: 1,
-    minHeight: 54,
-    justifyContent: 'center',
   },
-  saveButtonText: {
-    color: '#000000',
+  emptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  cardTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cardSubtitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'center',
+  },
+  iconBtn: {
+    paddingHorizontal: 4,
+  },
+  iconText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  metricsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricInputGroup: {
+    flex: 1,
+  },
+  metricLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  metricInput: {
+    backgroundColor: COLORS.inputBg,
+    color: COLORS.accent,
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '700',
+    borderRadius: 6,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#262626',
+    textAlign: 'center',
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  addButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  addButtonText: {
+    color: COLORS.background,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111111',
+  },
+  modalTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalClose: {
+    color: COLORS.accent,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  categoryFilterContainer: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111111',
+  },
+  categoryPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: COLORS.card,
+    marginRight: 8,
+  },
+  categoryPillActive: {
+    backgroundColor: COLORS.accent,
+  },
+  categoryPillText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  categoryPillTextActive: {
+    color: COLORS.background,
+    fontWeight: '700',
+  },
+  modalListContent: {
+    padding: 16,
+  },
+  dbItemCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    padding: 14,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  dbItemName: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dbItemCategory: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  dbItemAddIcon: {
+    color: COLORS.accent,
+    fontSize: 20,
+    fontWeight: '600',
   },
 });
