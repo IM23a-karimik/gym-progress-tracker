@@ -1,531 +1,701 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
+  TouchableOpacity,
   Modal,
-  FlatList,
   TextInput,
-  SafeAreaView,
-  KeyboardAvoidingView,
+  SectionList,
   Platform,
+  StatusBar as RNStatusBar,
+  SafeAreaView,
 } from 'react-native';
-import { useWorkoutStore, ExerciseCategory, PlannedExercise } from '../store/workoutStore';
+import { Ionicons } from '@expo/vector-icons';
+import { useWorkoutStore, DAYS, EXERCISE_LIBRARY, CATEGORY_ORDER } from '../store/workoutStore';
+import { DayOfWeek, Exercise, ExerciseLibraryItem } from '../types/workout';
 
-// Mock Database for the premium selection modal
-// Designed to be swapped seamlessly with a Supabase query later
-const EXERCISE_DATABASE: Array<{ id: string; name: string; category: ExerciseCategory }> = [
-  { id: 'db_1', name: 'Barbell Bench Press', category: 'Chest' },
-  { id: 'db_2', name: 'Incline Dumbbell Press', category: 'Chest' },
-  { id: 'db_3', name: 'Cable Crossovers', category: 'Chest' },
-  { id: 'db_4', name: 'Deadlift', category: 'Back' },
-  { id: 'db_5', name: 'Lat Pulldown', category: 'Back' },
-  { id: 'db_6', name: 'Barbell Row', category: 'Back' },
-  { id: 'db_7', name: 'Squat', category: 'Legs' },
-  { id: 'db_8', name: 'Leg Press', category: 'Legs' },
-  { id: 'db_9', name: 'Romanian Deadlift', category: 'Legs' },
-  { id: 'db_10', name: 'Overhead Press', category: 'Shoulders' },
-  { id: 'db_11', name: 'Lateral Raises', category: 'Shoulders' },
-  { id: 'db_12', name: 'Barbell Curl', category: 'Arms' },
-  { id: 'db_13', name: 'Tricep Extension', category: 'Arms' },
-  { id: 'db_14', name: 'Cable Crunches', category: 'Abs' },
-  { id: 'db_15', name: 'Hanging Leg Raises', category: 'Abs' },
-];
+interface DashboardScreenProps {
+  onStartWorkout: () => void;
+}
 
-const COLORS = {
-  background: '#000000',
-  card: '#121212',
-  accent: '#D4AF37',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#888888',
-  danger: '#FF4444',
-  inputBg: '#080808',
-  borderDark: '#1A1A1A',
-  overlay: 'rgba(0,0,0,0.9)',
-};
+const DEFAULT_TARGET_SETS = 3;
+const DEFAULT_TARGET_REPS = 10;
 
-const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const CATEGORIES: Array<ExerciseCategory | 'All'> = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs'];
+export default function DashboardScreen({ onStartWorkout }: DashboardScreenProps) {
+  const plan = useWorkoutStore((state) => state.plan);
+  const selectedDay = useWorkoutStore((state) => state.selectedDay);
+  const currentPreset = useWorkoutStore((state) => state.currentPreset);
+  const setSelectedDay = useWorkoutStore((state) => state.setSelectedDay);
+  const setCurrentPreset = useWorkoutStore((state) => state.setCurrentPreset);
+  const addPreset = useWorkoutStore((state) => state.addPreset);
+  const addExerciseToPreset = useWorkoutStore((state) => state.addExerciseToPreset);
+  const removeExerciseFromPreset = useWorkoutStore((state) => state.removeExerciseFromPreset);
 
-export default function DashboardScreen() {
-  const {
-    selectedDay,
-    days,
-    setSelectedDay,
-    setActivePreset,
-    addExerciseToPreset,
-    removeExerciseFromPreset,
-    updateExerciseInPreset,
-    reorderExercise,
-  } = useWorkoutStore();
+  const [isAddExerciseModalVisible, setAddExerciseModalVisible] = useState(false);
+  const [isAddPresetModalVisible, setAddPresetModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [newPresetName, setNewPresetName] = useState('');
 
-  const [isModalVisible, setModalVisible] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<ExerciseCategory | 'All'>('All');
+  const activeDayData = plan[selectedDay];
+  const presetNames = Object.keys(activeDayData.presets);
+  const activeExercises: Exercise[] = activeDayData.presets[currentPreset] ?? [];
 
-  const currentDayPlan = days[selectedDay];
-  const activePresetId = currentDayPlan?.activePresetId || 'standard';
-  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Standard', exercises: [] };
+  const filteredLibrarySections = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return CATEGORY_ORDER.map((category) => ({
+      title: category,
+      data: EXERCISE_LIBRARY.filter(
+        (item) =>
+          item.category === category &&
+          (query.length === 0 || item.name.toLowerCase().includes(query))
+      ),
+    })).filter((section) => section.data.length > 0);
+  }, [searchQuery]);
 
-  const handleAddExercise = (exerciseDef: typeof EXERCISE_DATABASE[0]) => {
-    addExerciseToPreset(selectedDay, activePresetId, {
-      name: exerciseDef.name,
-      category: exerciseDef.category,
-      targetSets: '3',
-      targetReps: '10',
-    });
-    setModalVisible(false);
+  const handleSelectDay = (day: DayOfWeek) => {
+    setSelectedDay(day);
   };
 
-  const filteredExercises = selectedCategory === 'All'
-    ? EXERCISE_DATABASE
-    : EXERCISE_DATABASE.filter(ex => ex.category === selectedCategory);
+  const handleSelectPreset = (presetName: string) => {
+    setCurrentPreset(presetName);
+  };
 
-  const renderExerciseCard = ({ item, index }: { item: PlannedExercise; index: number }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleContainer}>
-          <Text style={styles.cardTitle}>{item.name}</Text>
-          <Text style={styles.cardSubtitle}>{item.category}</Text>
-        </View>
-        <View style={styles.cardActions}>
-          <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'up')} style={styles.iconBtn}>
-            <Text style={styles.iconText}>↑</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'down')} style={styles.iconBtn}>
-            <Text style={styles.iconText}>↓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => removeExerciseFromPreset(selectedDay, activePresetId, item.id)} style={styles.iconBtn}>
-            <Text style={[styles.iconText, styles.dangerText]}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const handlePickExercise = (item: ExerciseLibraryItem) => {
+    addExerciseToPreset(
+      selectedDay,
+      currentPreset,
+      item,
+      DEFAULT_TARGET_SETS,
+      DEFAULT_TARGET_REPS
+    );
+    setAddExerciseModalVisible(false);
+    setSearchQuery('');
+  };
 
-      <View style={styles.metricsContainer}>
-        <View style={styles.metricInputGroup}>
-          <Text style={styles.metricLabel}>TARGET SETS</Text>
-          <TextInput
-            style={styles.metricInput}
-            value={item.targetSets}
-            onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetSets: text })}
-            keyboardType="numeric"
-            placeholderTextColor={COLORS.textSecondary}
-          />
-        </View>
-        <View style={styles.metricInputGroup}>
-          <Text style={styles.metricLabel}>TARGET REPS</Text>
-          <TextInput
-            style={styles.metricInput}
-            value={item.targetReps}
-            onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetReps: text })}
-            keyboardType="numeric"
-            placeholderTextColor={COLORS.textSecondary}
-          />
-        </View>
-      </View>
-    </View>
-  );
+  const handleDeleteExercise = (exerciseId: string) => {
+    removeExerciseFromPreset(selectedDay, currentPreset, exerciseId);
+  };
+
+  const handleCreatePreset = () => {
+    const trimmed = newPresetName.trim();
+    if (trimmed.length === 0) return;
+    addPreset(selectedDay, trimmed);
+    setCurrentPreset(trimmed);
+    setNewPresetName('');
+    setAddPresetModalVisible(false);
+  };
+
+  const closeAddPresetModal = () => {
+    setAddPresetModalVisible(false);
+    setNewPresetName('');
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-
-        {/* Day Selector Navigation */}
-        <View style={styles.dayTabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayTabsScroll}>
-            {DAYS_OF_WEEK.map((day) => {
-              const isSelected = day === selectedDay;
-              return (
-                <TouchableOpacity
-                  key={day}
-                  style={[styles.dayTab, isSelected ? styles.dayTabActive : styles.dayTabInactive]}
-                  onPress={() => setSelectedDay(day)}
-                >
-                  <Text style={[styles.dayTabText, isSelected ? styles.dayTabTextActive : styles.dayTabTextInactive]}>
-                    {day.substring(0, 3)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Dynamic Preset Navigation Tabs */}
-        <View style={styles.presetTabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetTabsScroll}>
-            {currentDayPlan && Object.values(currentDayPlan.presets).map((preset) => {
-              const isActive = preset.id === activePresetId;
-              return (
-                <TouchableOpacity
-                  key={preset.id}
-                  style={[styles.presetTab, isActive ? styles.presetTabActive : styles.presetTabInactive]}
-                  onPress={() => setActivePreset(selectedDay, preset.id)}
-                >
-                  <Text style={[styles.presetTabText, isActive ? styles.presetTabTextActive : styles.presetTabTextInactive]}>
-                    {preset.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Active Exercise List */}
-        <FlatList
-          data={activePreset.exercises}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={renderExerciseCard}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No exercises in this preset.</Text>
-              <Text style={styles.emptySubText}>Tap the button below to design your plan.</Text>
-            </View>
-          }
-        />
-
-        {/* Bottom Action Bar */}
-        <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-            <Text style={styles.addButtonText}>+ ADD EXERCISE</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.eyebrow}>DASHBOARD</Text>
+            <Text style={styles.title}>Your Training Plan</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={onStartWorkout}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="play" size={16} color="#000000" />
+            <Text style={styles.startButtonText}>Start</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Premium Full-Screen Modal for Exercise Selection */}
-        <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-          <View style={styles.modalContainer}>
+        {/* Day selector */}
+        <Text style={styles.sectionLabel}>Day</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.dayScroll}
+          contentContainerStyle={styles.dayScrollContent}
+        >
+          {DAYS.map((day) => {
+            const isActive = day === selectedDay;
+            return (
+              <TouchableOpacity
+                key={day}
+                onPress={() => handleSelectDay(day)}
+                style={[styles.dayChip, isActive && styles.dayChipActive]}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dayChipText, isActive && styles.dayChipTextActive]}>
+                  {day.slice(0, 3).toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Preset tabs — premium gold pills */}
+        <Text style={styles.sectionLabel}>Preset</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.presetScroll}
+          contentContainerStyle={styles.presetScrollContent}
+        >
+          {presetNames.map((presetName) => {
+            const isActive = presetName === currentPreset;
+            return (
+              <TouchableOpacity
+                key={presetName}
+                onPress={() => handleSelectPreset(presetName)}
+                style={[styles.presetPill, isActive && styles.presetPillActive]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.presetPillText, isActive && styles.presetPillTextActive]}>
+                  {presetName}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            onPress={() => setAddPresetModalVisible(true)}
+            style={styles.addPresetPill}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="add" size={18} color="#D4AF37" />
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Exercise cards */}
+        <View style={styles.exerciseListWrapper}>
+          {activeExercises.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="barbell-outline" size={36} color="#3A3A3A" />
+              <Text style={styles.emptyStateTitle}>No exercises yet</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                Add your first exercise to the &quot;{currentPreset}&quot; preset for{' '}
+                {selectedDay}.
+              </Text>
+            </View>
+          ) : (
+            activeExercises.map((exercise) => (
+              <View key={exercise.id} style={styles.exerciseCard}>
+                <View style={styles.exerciseCardMain}>
+                  <View style={styles.categoryDot} />
+                  <View style={styles.exerciseInfo}>
+                    <Text style={styles.exerciseName}>{exercise.name}</Text>
+                    <Text style={styles.exerciseMeta}>
+                      {exercise.targetSets} sets × {exercise.targetReps} reps · {exercise.category}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleDeleteExercise(exercise.id)}
+                  style={styles.deleteButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#E5484D" />
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Add exercise button */}
+        <TouchableOpacity
+          style={styles.addExerciseButton}
+          onPress={() => setAddExerciseModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add-circle" size={20} color="#000000" />
+          <Text style={styles.addExerciseButtonText}>Add Exercise to Preset</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Add Exercise Modal — searchable, grouped by muscle category */}
+      <Modal
+        visible={isAddExerciseModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAddExerciseModalVisible(false)}
+      >
+        <View style={styles.modalBackdropBottom}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Exercise</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalClose}>Cancel</Text>
+              <View>
+                <Text style={styles.modalTitle}>Add Exercise</Text>
+                <Text style={styles.modalSubtitle}>
+                  {selectedDay} · {currentPreset}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAddExerciseModalVisible(false)}
+                style={styles.modalCloseButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.categoryFilterContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                {CATEGORIES.map((cat) => {
-                  const isSelected = selectedCategory === cat;
-                  return (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.categoryPill, isSelected ? styles.categoryPillActive : styles.categoryPillInactive]}
-                      onPress={() => setSelectedCategory(cat)}
-                    >
-                      <Text style={[styles.categoryPillText, isSelected ? styles.categoryPillTextActive : styles.categoryPillTextInactive]}>
-                        {cat}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color="#7A7A7A" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search exercises..."
+                placeholderTextColor="#5C5C5C"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCorrect={false}
+              />
             </View>
 
-            <FlatList
-              data={filteredExercises}
+            <SectionList
+              sections={filteredLibrarySections}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.modalListContent}
+              stickySectionHeadersEnabled
+              renderSectionHeader={({ section }) => (
+                <View style={styles.categoryHeader}>
+                  <Text style={styles.categoryHeaderText}>{section.title}</Text>
+                </View>
+              )}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.dbItemCard} onPress={() => handleAddExercise(item)}>
-                  <View>
-                    <Text style={styles.dbItemName}>{item.name}</Text>
-                    <Text style={styles.dbItemCategory}>{item.category}</Text>
-                  </View>
-                  <View style={styles.dbItemAddButton}>
-                    <Text style={styles.dbItemAddIcon}>+</Text>
-                  </View>
+                <TouchableOpacity
+                  style={styles.libraryItem}
+                  onPress={() => handlePickExercise(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.libraryItemText}>{item.name}</Text>
+                  <Ionicons name="add-circle-outline" size={22} color="#D4AF37" />
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <View style={styles.emptyLibrary}>
+                  <Text style={styles.emptyLibraryText}>No exercises match your search.</Text>
+                </View>
+              }
+              contentContainerStyle={styles.sectionListContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             />
           </View>
-        </Modal>
+        </View>
+      </Modal>
 
-      </KeyboardAvoidingView>
+      {/* Add Preset Modal — create a new custom preset for this day */}
+      <Modal
+        visible={isAddPresetModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={closeAddPresetModal}
+      >
+        <View style={styles.modalBackdropCenter}>
+          <View style={styles.smallModalCard}>
+            <Text style={styles.modalTitle}>New Preset</Text>
+            <Text style={styles.modalSubtitle}>For {selectedDay}</Text>
+            <TextInput
+              style={styles.presetInput}
+              placeholder="e.g. Deload Week"
+              placeholderTextColor="#5C5C5C"
+              value={newPresetName}
+              onChangeText={setNewPresetName}
+              autoFocus
+            />
+            <View style={styles.smallModalActions}>
+              <TouchableOpacity style={styles.smallModalCancel} onPress={closeAddPresetModal}>
+                <Text style={styles.smallModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.smallModalConfirm} onPress={handleCreatePreset}>
+                <Text style={styles.smallModalConfirmText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+
+const GOLD = '#D4AF37';
+const BLACK = '#000000';
+const CHARCOAL = '#121212';
+const CHARCOAL_LIGHT = '#1C1C1C';
+const BORDER = '#262626';
+const TEXT_PRIMARY = '#FFFFFF';
+const TEXT_SECONDARY = '#9A9A9A';
+const TEXT_MUTED = '#5C5C5C';
+const DANGER = '#E5484D';
+
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: BLACK,
+    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0,
+  },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: BLACK,
   },
-  dayTabsContainer: {
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderDark,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 40,
   },
-  dayTabsScroll: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  eyebrow: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  title: {
+    color: TEXT_PRIMARY,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  startButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: GOLD,
     paddingHorizontal: 16,
-    gap: 10,
-  },
-  dayTab: {
     paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    borderRadius: 24,
+    gap: 6,
   },
-  dayTabActive: {
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-  },
-  dayTabInactive: {
-    backgroundColor: COLORS.inputBg,
-    borderWidth: 1,
-    borderColor: COLORS.inputBg,
-  },
-  dayTabText: {
+  startButtonText: {
+    color: BLACK,
+    fontWeight: '700',
     fontSize: 14,
   },
-  dayTabTextActive: {
-    color: COLORS.accent,
-    fontWeight: 'bold',
+  sectionLabel: {
+    color: TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    marginTop: 4,
   },
-  dayTabTextInactive: {
-    color: COLORS.textSecondary,
+  dayScroll: {
+    marginBottom: 20,
+  },
+  dayScrollContent: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  dayChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: CHARCOAL,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  dayChipActive: {
+    backgroundColor: CHARCOAL_LIGHT,
+    borderColor: GOLD,
+  },
+  dayChipText: {
+    color: TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  dayChipTextActive: {
+    color: GOLD,
+  },
+  presetScroll: {
+    marginBottom: 24,
+  },
+  presetScrollContent: {
+    gap: 10,
+    paddingRight: 8,
+    alignItems: 'center',
+  },
+  presetPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: CHARCOAL,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  presetPillActive: {
+    backgroundColor: GOLD,
+    borderColor: GOLD,
+  },
+  presetPillText: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
     fontWeight: '600',
   },
-  presetTabsContainer: {
-    paddingVertical: 16,
+  presetPillTextActive: {
+    color: BLACK,
+    fontWeight: '700',
   },
-  presetTabsScroll: {
+  addPresetPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: CHARCOAL,
+    borderWidth: 1,
+    borderColor: GOLD,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  exerciseListWrapper: {
+    marginBottom: 20,
+  },
+  exerciseCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CHARCOAL,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 16,
     paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  exerciseCardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     gap: 12,
   },
-  presetTab: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    borderWidth: 1,
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: GOLD,
   },
-  presetTabActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
+  exerciseInfo: {
+    flex: 1,
   },
-  presetTabInactive: {
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.borderDark,
-  },
-  presetTabText: {
-    fontSize: 14,
-  },
-  presetTabTextActive: {
-    color: COLORS.background,
-    fontWeight: 'bold',
-  },
-  presetTabTextInactive: {
-    color: COLORS.textSecondary,
+  exerciseName: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
     fontWeight: '600',
+    marginBottom: 4,
   },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 120,
+  exerciseMeta: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
   },
-  emptyContainer: {
-    paddingTop: 80,
+  deleteButton: {
+    padding: 6,
+    marginLeft: 8,
+  },
+  emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyText: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  emptySubText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  card: {
-    backgroundColor: COLORS.card,
+    backgroundColor: CHARCOAL,
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
     borderWidth: 1,
-    borderColor: COLORS.borderDark,
+    borderColor: BORDER,
+    paddingVertical: 40,
+    paddingHorizontal: 24,
   },
-  cardHeader: {
+  emptyStateTitle: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  emptyStateSubtitle: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  addExerciseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GOLD,
+    borderRadius: 16,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  addExerciseButtonText: {
+    color: BLACK,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalBackdropBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdropCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSheet: {
+    backgroundColor: CHARCOAL,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    maxHeight: '85%',
+    borderTopWidth: 1,
+    borderColor: BORDER,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: BORDER,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 16,
   },
-  cardTitleContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  cardTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  cardSubtitle: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 4,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-  },
-  iconBtn: {
-    paddingHorizontal: 4,
-  },
-  iconText: {
-    color: COLORS.textSecondary,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  dangerText: {
-    color: COLORS.danger,
-  },
-  metricsContainer: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  metricInputGroup: {
-    flex: 1,
-  },
-  metricLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  metricInput: {
-    backgroundColor: COLORS.inputBg,
-    color: COLORS.accent,
-    fontSize: 16,
-    fontWeight: 'bold',
-    borderRadius: 10,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderDark,
-    textAlign: 'center',
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    backgroundColor: COLORS.overlay,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderDark,
-  },
-  addButton: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: COLORS.background,
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 20 : 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderDark,
-  },
   modalTitle: {
-    color: COLORS.textPrimary,
+    color: TEXT_PRIMARY,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
-  modalClose: {
-    color: COLORS.accent,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  categoryFilterContainer: {
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderDark,
-  },
-  categoryScroll: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  categoryPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  categoryPillActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  categoryPillInactive: {
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.borderDark,
-  },
-  categoryPillText: {
-    fontSize: 14,
-  },
-  categoryPillTextActive: {
-    color: COLORS.background,
-    fontWeight: 'bold',
-  },
-  categoryPillTextInactive: {
-    color: COLORS.textSecondary,
-    fontWeight: 'bold',
-  },
-  modalListContent: {
-    padding: 16,
-  },
-  dbItemCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderDark,
-  },
-  dbItemName: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  dbItemCategory: {
-    color: COLORS.textSecondary,
+  modalSubtitle: {
+    color: GOLD,
     fontSize: 13,
+    fontWeight: '600',
     marginTop: 4,
   },
-  dbItemAddButton: {
+  modalCloseButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: COLORS.inputBg,
-    alignItems: 'center',
+    backgroundColor: CHARCOAL_LIGHT,
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.accent,
+    alignItems: 'center',
   },
-  dbItemAddIcon: {
-    color: COLORS.accent,
-    fontSize: 18,
-    fontWeight: 'bold',
-    lineHeight: 20,
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CHARCOAL_LIGHT,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    paddingVertical: 12,
+  },
+  sectionListContent: {
+    paddingBottom: 20,
+  },
+  categoryHeader: {
+    backgroundColor: CHARCOAL,
+    paddingVertical: 8,
+  },
+  categoryHeaderText: {
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  libraryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CHARCOAL_LIGHT,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  libraryItemText: {
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  emptyLibrary: {
+    paddingVertical: 30,
+    alignItems: 'center',
+  },
+  emptyLibraryText: {
+    color: TEXT_MUTED,
+    fontSize: 14,
+  },
+  smallModalCard: {
+    width: '100%',
+    backgroundColor: CHARCOAL,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 24,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  presetInput: {
+    backgroundColor: CHARCOAL_LIGHT,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    color: TEXT_PRIMARY,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  smallModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  smallModalCancel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  smallModalCancelText: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  smallModalConfirm: {
+    backgroundColor: GOLD,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  smallModalConfirmText: {
+    color: BLACK,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
