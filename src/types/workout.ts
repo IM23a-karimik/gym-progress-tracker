@@ -32,11 +32,6 @@ export interface Log {
   loggedAt: string;
 }
 
-export interface SetDraft {
-  weight: string;
-  reps: string;
-}
-
 export interface SplitDay {
   id: string;
   dayIndex: number;
@@ -45,9 +40,25 @@ export interface SplitDay {
   workoutId: string;
 }
 
+/**
+ * A single, independently-editable set row for one exercise during an
+ * active session. `weight` / `reps` are kept as raw text so a row can sit
+ * blank (showing a ghost placeholder) until the user types or logs it.
+ */
+export interface WorkoutSet {
+  id: string;
+  weight: string;
+  reps: string;
+  isCompleted: boolean;
+}
+
+/** Exercise id -> its dynamic list of sets for the current session. */
+export type ExerciseSetsMap = Record<string, WorkoutSet[]>;
+
 export interface ActiveWorkoutSession {
   sessionId: string;
   workoutId: string;
   currentExerciseIndex: number;
   completed: boolean;
+  exerciseSets: ExerciseSetsMap;
 }
