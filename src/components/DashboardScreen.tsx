@@ -15,7 +15,7 @@ import {
 import { useWorkoutStore, ExerciseCategory, PlannedExercise } from '../store/workoutStore';
 
 // Mock Database for the premium selection modal
-// In the future, this can be swapped with your Supabase fetch logic
+// Designed to be swapped seamlessly with a Supabase query later
 const EXERCISE_DATABASE: Array<{ id: string; name: string; category: ExerciseCategory }> = [
   { id: 'db_1', name: 'Barbell Bench Press', category: 'Chest' },
   { id: 'db_2', name: 'Incline Dumbbell Press', category: 'Chest' },
@@ -43,6 +43,7 @@ const COLORS = {
   danger: '#FF4444',
   inputBg: '#080808',
   borderDark: '#1A1A1A',
+  overlay: 'rgba(0,0,0,0.9)',
 };
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -65,7 +66,7 @@ export default function DashboardScreen() {
 
   const currentDayPlan = days[selectedDay];
   const activePresetId = currentDayPlan?.activePresetId || 'standard';
-  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Default Split', exercises: [] };
+  const activePreset = currentDayPlan?.presets[activePresetId] || { id: 'standard', name: 'Standard', exercises: [] };
 
   const handleAddExercise = (exerciseDef: typeof EXERCISE_DATABASE[0]) => {
     addExerciseToPreset(selectedDay, activePresetId, {
@@ -81,6 +82,51 @@ export default function DashboardScreen() {
     ? EXERCISE_DATABASE
     : EXERCISE_DATABASE.filter(ex => ex.category === selectedCategory);
 
+  const renderExerciseCard = ({ item, index }: { item: PlannedExercise; index: number }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardTitleContainer}>
+          <Text style={styles.cardTitle}>{item.name}</Text>
+          <Text style={styles.cardSubtitle}>{item.category}</Text>
+        </View>
+        <View style={styles.cardActions}>
+          <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'up')} style={styles.iconBtn}>
+            <Text style={styles.iconText}>↑</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'down')} style={styles.iconBtn}>
+            <Text style={styles.iconText}>↓</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => removeExerciseFromPreset(selectedDay, activePresetId, item.id)} style={styles.iconBtn}>
+            <Text style={[styles.iconText, styles.dangerText]}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.metricsContainer}>
+        <View style={styles.metricInputGroup}>
+          <Text style={styles.metricLabel}>TARGET SETS</Text>
+          <TextInput
+            style={styles.metricInput}
+            value={item.targetSets}
+            onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetSets: text })}
+            keyboardType="numeric"
+            placeholderTextColor={COLORS.textSecondary}
+          />
+        </View>
+        <View style={styles.metricInputGroup}>
+          <Text style={styles.metricLabel}>TARGET REPS</Text>
+          <TextInput
+            style={styles.metricInput}
+            value={item.targetReps}
+            onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetReps: text })}
+            keyboardType="numeric"
+            placeholderTextColor={COLORS.textSecondary}
+          />
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -93,10 +139,10 @@ export default function DashboardScreen() {
               return (
                 <TouchableOpacity
                   key={day}
-                  style={[styles.dayTab, isSelected && styles.dayTabActive]}
+                  style={[styles.dayTab, isSelected ? styles.dayTabActive : styles.dayTabInactive]}
                   onPress={() => setSelectedDay(day)}
                 >
-                  <Text style={[styles.dayTabText, isSelected && styles.dayTabTextActive]}>
+                  <Text style={[styles.dayTabText, isSelected ? styles.dayTabTextActive : styles.dayTabTextInactive]}>
                     {day.substring(0, 3)}
                   </Text>
                 </TouchableOpacity>
@@ -113,10 +159,10 @@ export default function DashboardScreen() {
               return (
                 <TouchableOpacity
                   key={preset.id}
-                  style={[styles.presetTab, isActive && styles.presetTabActive]}
+                  style={[styles.presetTab, isActive ? styles.presetTabActive : styles.presetTabInactive]}
                   onPress={() => setActivePreset(selectedDay, preset.id)}
                 >
-                  <Text style={[styles.presetTabText, isActive && styles.presetTabTextActive]}>
+                  <Text style={[styles.presetTabText, isActive ? styles.presetTabTextActive : styles.presetTabTextInactive]}>
                     {preset.name}
                   </Text>
                 </TouchableOpacity>
@@ -130,50 +176,7 @@ export default function DashboardScreen() {
           data={activePreset.exercises}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item, index }) => (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardTitleContainer}>
-                  <Text style={styles.cardTitle}>{item.name}</Text>
-                  <Text style={styles.cardSubtitle}>{item.category}</Text>
-                </View>
-                <View style={styles.cardActions}>
-                  <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'up')} style={styles.iconBtn}>
-                    <Text style={styles.iconText}>↑</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => reorderExercise(selectedDay, activePresetId, index, 'down')} style={styles.iconBtn}>
-                    <Text style={styles.iconText}>↓</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => removeExerciseFromPreset(selectedDay, activePresetId, item.id)} style={styles.iconBtn}>
-                    <Text style={[styles.iconText, styles.dangerText]}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.metricsContainer}>
-                <View style={styles.metricInputGroup}>
-                  <Text style={styles.metricLabel}>TARGET SETS</Text>
-                  <TextInput
-                    style={styles.metricInput}
-                    value={item.targetSets}
-                    onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetSets: text })}
-                    keyboardType="numeric"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-                <View style={styles.metricInputGroup}>
-                  <Text style={styles.metricLabel}>TARGET REPS</Text>
-                  <TextInput
-                    style={styles.metricInput}
-                    value={item.targetReps}
-                    onChangeText={(text) => updateExerciseInPreset(selectedDay, activePresetId, item.id, { targetReps: text })}
-                    keyboardType="numeric"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-              </View>
-            </View>
-          )}
+          renderItem={renderExerciseCard}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No exercises in this preset.</Text>
@@ -185,7 +188,7 @@ export default function DashboardScreen() {
         {/* Bottom Action Bar */}
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-            <Text style={styles.addButtonText}>+ ADD EXERCISE TO PRESET</Text>
+            <Text style={styles.addButtonText}>+ ADD EXERCISE</Text>
           </TouchableOpacity>
         </View>
 
@@ -201,17 +204,20 @@ export default function DashboardScreen() {
 
             <View style={styles.categoryFilterContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categoryPill, selectedCategory === cat && styles.categoryPillActive]}
-                    onPress={() => setSelectedCategory(cat)}
-                  >
-                    <Text style={[styles.categoryPillText, selectedCategory === cat && styles.categoryPillTextActive]}>
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {CATEGORIES.map((cat) => {
+                  const isSelected = selectedCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.categoryPill, isSelected ? styles.categoryPillActive : styles.categoryPillInactive]}
+                      onPress={() => setSelectedCategory(cat)}
+                    >
+                      <Text style={[styles.categoryPillText, isSelected ? styles.categoryPillTextActive : styles.categoryPillTextInactive]}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
 
@@ -258,21 +264,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: COLORS.inputBg,
   },
   dayTabActive: {
     backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.accent,
   },
+  dayTabInactive: {
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.inputBg,
+  },
   dayTabText: {
-    color: COLORS.textSecondary,
     fontSize: 14,
-    fontWeight: '600',
   },
   dayTabTextActive: {
     color: COLORS.accent,
     fontWeight: 'bold',
+  },
+  dayTabTextInactive: {
+    color: COLORS.textSecondary,
+    fontWeight: '600',
   },
   presetTabsContainer: {
     paddingVertical: 16,
@@ -284,27 +296,31 @@ const styles = StyleSheet.create({
   presetTab: {
     paddingVertical: 10,
     paddingHorizontal: 18,
-    backgroundColor: COLORS.card,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: COLORS.borderDark,
   },
   presetTabActive: {
     backgroundColor: COLORS.accent,
     borderColor: COLORS.accent,
   },
+  presetTabInactive: {
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.borderDark,
+  },
   presetTabText: {
-    color: COLORS.textSecondary,
-    fontWeight: '600',
     fontSize: 14,
   },
   presetTabTextActive: {
     color: COLORS.background,
     fontWeight: 'bold',
   },
+  presetTabTextInactive: {
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 120, // Extra padding to clear the absolute bottom bar
+    paddingBottom: 120,
   },
   emptyContainer: {
     paddingTop: 80,
@@ -398,7 +414,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: COLORS.overlay,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderDark,
   },
@@ -451,21 +467,26 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: COLORS.borderDark,
   },
   categoryPillActive: {
     backgroundColor: COLORS.accent,
     borderColor: COLORS.accent,
   },
+  categoryPillInactive: {
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.borderDark,
+  },
   categoryPillText: {
-    color: COLORS.textSecondary,
     fontSize: 14,
-    fontWeight: 'bold',
   },
   categoryPillTextActive: {
     color: COLORS.background,
+    fontWeight: 'bold',
+  },
+  categoryPillTextInactive: {
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
   },
   modalListContent: {
     padding: 16,
